@@ -20,5 +20,7 @@ Probador de API keys de IA en `llavero.html`. Pega una llave y comprueba si func
 
 - Proveedores: OpenAI, Anthropic, Google Gemini, Groq, Mistral, OpenRouter, DeepSeek, xAI, Together, Cohere y cualquier servidor compatible con OpenAI (Ollama, LM Studio…).
 - Detecta el proveedor por el prefijo de la llave (`sk-ant-`, `AIza`, `gsk_`, `sk-or-`…).
+- Modo chat: conversación de varios turnos con el modelo elegido, respuestas en streaming, instrucciones de sistema y botón para detener. Muestra el tiempo hasta el primer token y los tokens gastados.
 - La petición va directa del navegador al proveedor; el historial solo guarda llaves enmascaradas.
 - Si un proveedor bloquea las llamadas desde webs (CORS), copia el comando cURL y pruébala desde la terminal.
+- Dentro de un artifact de Claude no puede conectarse a otros servidores: prepara los comandos cURL y el chat habla con Claude usando tu cuenta.
