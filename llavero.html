@@ -330,6 +330,31 @@ textarea.text-in { resize: vertical; min-height: 84px; font-family: var(--f-body
 .reply-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font: 400 12px var(--f-mono); color: var(--faint); }
 .reply-meta b { color: var(--muted); font-weight: 500; }
 
+/* Modo Claude: la página no puede llamar a otros servidores, así que prepara comandos de terminal */
+.banner {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start;
+  margin: 0 0 22px; padding: 14px 16px; border-radius: 14px; font-size: 13.5px; color: var(--muted);
+  background: linear-gradient(120deg, rgba(167, 139, 250, .10), rgba(103, 232, 249, .06));
+  border: 1px solid rgba(167, 139, 250, .28);
+}
+.banner svg { color: var(--violet); margin-top: 1px; }
+.banner b { color: var(--ink); font-weight: 600; }
+.term { margin-top: 16px; border-radius: 16px; background: #05050B; border: 1px solid var(--line); overflow: hidden; }
+.term + .term { margin-top: 12px; }
+.term-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--line); }
+.term-bar .dots { display: flex; gap: 6px; }
+.term-bar .dots i { width: 9px; height: 9px; border-radius: 50%; background: #2A2940; }
+.term-bar .dots i:first-child { background: rgba(255, 111, 134, .7); }
+.term-bar .dots i:nth-child(2) { background: rgba(252, 195, 90, .7); }
+.term-bar .dots i:last-child { background: rgba(91, 228, 155, .7); }
+.term-bar > span:not(.dots) { font-size: 12.5px; color: var(--muted); min-width: 0; flex: 1; }
+.term pre { margin: 0; padding: 14px 16px 16px; overflow-x: auto; font: 400 12.5px/1.65 var(--f-mono); color: var(--ink); }
+.term .fl { color: var(--cyan); }
+.term .vr { color: var(--violet); }
+.term .cm { color: var(--faint); }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.check input { accent-color: var(--violet); width: 15px; height: 15px; }
+
 /* Columna lateral */
 .side h2 { margin: 0 0 4px; font: 400 26px/1.1 var(--f-display); }
 .side p { margin: 0; color: var(--muted); font-size: 13.5px; }
@@ -402,6 +427,10 @@ footer { margin-top: 48px; color: var(--faint); font-size: 12.5px; text-align: c
   <div class="grid">
     <main class="stack">
       <form class="card" id="form" autocomplete="off" novalidate>
+        <div class="banner" id="claudeBanner" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-5-6-5M12 19h8"/></svg>
+          <div><b>Estás dentro de Claude.</b> Aquí las páginas no pueden conectarse a otros servidores, así que Llavero prepara los comandos para que pruebes tu llave desde la terminal. Para probarla con un clic, abre <span class="mono">llavero.html</span> directamente en tu navegador.</div>
+        </div>
         <h2 class="step"><b>01</b><span>Proveedor</span><small id="getKey"></small></h2>
         <div class="providers" id="providers" role="radiogroup" aria-label="Proveedor"></div>
 
@@ -681,11 +710,39 @@ async function verify(p, key, base) {
   return r;
 }
 
+// Modelo de ejemplo para el comando de mensaje cuando aún no hay lista de modelos
+const SAMPLE_MODEL = {
+  openai: 'gpt-4o-mini', anthropic: 'claude-haiku-4-5-20251001', gemini: 'gemini-2.5-flash',
+  groq: 'llama-3.1-8b-instant', mistral: 'mistral-small-latest', openrouter: 'openai/gpt-4o-mini',
+  deepseek: 'deepseek-chat', xai: 'grok-3-mini', together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+  cohere: 'command-a-03-2025', custom: 'llama3.2',
+};
+
+function curlHeaders(p, extra = {}) {
+  const h = { ...authHeaders(p, '$API_KEY'), ...extra };
+  delete h['anthropic-dangerous-direct-browser-access']; // solo hace falta en el navegador
+  return Object.entries(h).map(([k, v]) => ` \\\n  -H "${k}: ${v}"`).join('');
+}
+
 function curlFor(p, base) {
   const url = listUrl(p, '$API_KEY', base).replace(encodeURIComponent('$API_KEY'), '$API_KEY');
   const target = p.id === 'openrouter' ? base + '/key' : url;
-  const hs = Object.entries(authHeaders(p, '$API_KEY')).map(([k, v]) => ` \\\n  -H "${k}: ${v}"`).join('');
-  return `curl -i "${target}"${hs}`;
+  return `curl -i "${target}"${curlHeaders(p)}`;
+}
+
+function curlChat(p, base, model) {
+  const msg = [{ role: 'user', content: 'Di hola en una frase' }];
+  const ct = { 'Content-Type': 'application/json' };
+  let url, body;
+  if (p.kind === 'anthropic') { url = base + '/messages'; body = { model, max_tokens: 100, messages: msg }; }
+  else if (p.kind === 'gemini') {
+    url = `${base}/models/${model}:generateContent?key=$API_KEY`;
+    body = { contents: [{ parts: [{ text: msg[0].content }] }] };
+    return `curl -i "${url}"${Object.entries(ct).map(([k, v]) => ` \\\n  -H "${k}: ${v}"`).join('')} \\\n  -d '${JSON.stringify(body)}'`;
+  }
+  else if (p.kind === 'cohere') { url = base + '/v2/chat'; body = { model, messages: msg }; }
+  else { url = base + '/chat/completions'; body = { model, messages: msg, ...(p.id === 'openai' ? { max_completion_tokens: 200 } : { max_tokens: 100 }) }; }
+  return `curl -i "${url}"${curlHeaders(p, ct)} \\\n  -d '${JSON.stringify(body)}'`;
 }
 
 /* ---------- Interfaz ---------- */
@@ -705,6 +762,7 @@ function selectProvider(p, auto = false) {
   $('#key').placeholder = p.id === 'custom' ? 'Llave (déjala vacía si tu servidor no la pide)' : p.hint.includes('…') ? p.hint : 'Pega tu llave aquí';
   $('#getKey').innerHTML = p.keys ? `<a href="${p.keys}" target="_blank" rel="noopener">Conseguir una llave de ${esc(p.name)} ↗</a>` : '';
   renderKeyMeta(auto);
+  if (claudeMode) renderTerminal();
 }
 
 function renderKeyMeta(auto) {
@@ -728,6 +786,7 @@ function onKeyInput() {
   }
   if (!found) state.lastDetected = null;
   renderKeyMeta(found && found === state.provider);
+  if (claudeMode) renderTerminal();
 }
 
 function setTesting(on) {
@@ -824,6 +883,13 @@ async function runTest(e) {
   const p = state.provider;
   const key = $('#key').value.trim();
   const base = baseFor(p);
+  if (claudeMode) {
+    renderTerminal();
+    const el = $('#result');
+    el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter');
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   if (!key && p.id !== 'custom') { shake('#keyfield'); $('#key').focus(); return; }
   if (p.id === 'custom' && !/^https?:\/\//.test(base)) { shake('#base'); $('#base').focus(); toast('Escribe la URL base, p. ej. http://localhost:11434/v1'); return; }
 
@@ -833,6 +899,10 @@ async function runTest(e) {
   try { r = await verify(p, key, base); }
   catch (err) { r = { state: 'net', status: null, ms: err.ms, message: err.message, headers: [], models: [] }; }
   setTesting(false);
+  if (r.state === 'net') {
+    await new Promise(res => setTimeout(res, 80)); // el aviso de CSP puede llegar justo después del fallo
+    if (blockedByCsp) { enterClaudeMode(); return; }
+  }
 
   state.lastKey = key;
   state.models = r.models;
@@ -989,6 +1059,7 @@ $('#providers').addEventListener('keydown', e => {
   $(`.chip[data-id="${state.provider.id}"]`).focus();
 });
 $('#key').addEventListener('input', onKeyInput);
+$('#base').addEventListener('input', () => { if (claudeMode) renderTerminal(); });
 $('#form').addEventListener('submit', runTest);
 $('#reveal').addEventListener('click', e => {
   const k = $('#key');
@@ -1023,8 +1094,83 @@ $('#send').addEventListener('click', sendChat);
 $('#prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendChat(); });
 $('#clearHist').addEventListener('click', () => { try { localStorage.removeItem(HKEY); } catch {} renderHistory([]); });
 
+/* ---------- Modo Claude ----------
+   Dentro de un artifact de Claude la política de seguridad bloquea las llamadas a otros servidores.
+   En ese caso la tarjeta de resultado se convierte en un generador de comandos cURL. */
+let claudeMode = false;
+let blockedByCsp = false;
+document.addEventListener('securitypolicyviolation', e => {
+  if (/connect-src/.test(e.effectiveDirective || e.violatedDirective)) blockedByCsp = true;
+});
+
+function hl(cmd) {
+  return esc(cmd)
+    .replace(/(^|\s)(-[a-zA-Z])(?=\s)/g, '$1<span class="fl">$2</span>')
+    .replace(/\$API_KEY/g, '<span class="vr">$API_KEY</span>');
+}
+
+function renderTerminal() {
+  const p = state.provider;
+  const base = baseFor(p) || 'http://localhost:11434/v1';
+  const key = $('#key').value.trim();
+  const withKey = $('#inclKey')?.checked && key;
+  const model = $('#model').value.trim() || SAMPLE_MODEL[p.id];
+  const exportLine = `export API_KEY="${withKey ? key : 'pega-aquí-tu-llave'}"`;
+  const blocks = [
+    ['1 · ¿La llave es válida?', curlFor(p, base)],
+    ['2 · ¿Tiene saldo? Envía un mensaje', curlChat(p, base, model)],
+  ];
+  const el = $('#result');
+  el.hidden = false;
+  el.innerHTML = `
+    <h2 class="step" style="margin-bottom:4px"><b>03</b><span>Pruébala en tu terminal</span><small>${esc(p.name)}</small></h2>
+    <p class="res-sub" style="margin:0">Pega estos comandos en una terminal (macOS, Linux o WSL). La respuesta te dice si la llave abre la puerta.</p>
+    <div class="term">
+      <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span><span>0 · Guarda tu llave en la sesión</span>
+        <button type="button" class="btn sm" data-copy="${esc(exportLine)}">Copiar</button></div>
+      <pre>${esc(withKey ? `export API_KEY="${mask(key)}"` : exportLine)}${withKey ? '  <span class="cm"># se copia completa</span>' : ''}</pre>
+    </div>
+    ${blocks.map(([t, c]) => `
+    <div class="term">
+      <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span><span>${esc(t)}</span>
+        <button type="button" class="btn sm" data-copy="${esc(c)}">Copiar</button></div>
+      <pre>${hl(c)}</pre>
+    </div>`).join('')}
+    <div class="actions" style="margin-top:16px">
+      <label class="check"><input type="checkbox" id="inclKey" ${withKey ? 'checked' : ''}> Incluir mi llave en el comando al copiar</label>
+    </div>
+    <p class="note">Busca la primera línea de la respuesta: <span class="mono">HTTP/2 200</span> significa válida; <span class="mono">401</span> o <span class="mono">403</span>, rechazada; <span class="mono">402</span> o <span class="mono">429</span>, sin saldo o con límite. El comando 2 confirma que de verdad puede generar texto.</p>`;
+}
+
+function enterClaudeMode() {
+  if (claudeMode) return;
+  claudeMode = true;
+  $('#claudeBanner').hidden = false;
+  $('#paste').hidden = true; // leer el portapapeles no está permitido; Ctrl+V sí funciona
+  $('#chat').hidden = true;
+  $('#go span').textContent = 'Preparar comandos';
+  renderTerminal();
+}
+
+function detectClaude() { if (typeof window.claude?.use === 'function') enterClaudeMode(); }
+
+$('#result').addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy]');
+  if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); toast('Comando copiado'); }
+  catch {
+    const pre = b.closest('.term').querySelector('pre');
+    getSelection().selectAllChildren(pre);
+    toast('Selecciona el texto y cópialo con Ctrl+C');
+  }
+});
+$('#result').addEventListener('change', e => { if (e.target.id === 'inclKey') renderTerminal(); });
+
 selectProvider(PROVIDERS[0]);
 renderHistory();
+detectClaude();
+setTimeout(detectClaude, 500);
+setTimeout(detectClaude, 2000);
 
 /* ---------- Red neuronal de fondo ---------- */
 (function network() {
