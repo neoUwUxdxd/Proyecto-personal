@@ -13,3 +13,12 @@ Registro diario de hábitos en una sola pantalla. Marca cada día lo que cumplis
 Abre `index.html` en el navegador. No hay dependencias ni paso de compilación.
 
 La primera vez se cargan datos de ejemplo; pulsa **Empezar de cero** para usar la app con tus propios hábitos.
+
+# Llavero
+
+Probador de API keys de IA en `llavero.html`. Pega una llave y comprueba si funciona, qué modelos desbloquea y cómo responde un modelo a un mensaje de prueba.
+
+- Proveedores: OpenAI, Anthropic, Google Gemini, Groq, Mistral, OpenRouter, DeepSeek, xAI, Together, Cohere y cualquier servidor compatible con OpenAI (Ollama, LM Studio…).
+- Detecta el proveedor por el prefijo de la llave (`sk-ant-`, `AIza`, `gsk_`, `sk-or-`…).
+- La petición va directa del navegador al proveedor; el historial solo guarda llaves enmascaradas.
+- Si un proveedor bloquea las llamadas desde webs (CORS), copia el comando cURL y pruébala desde la terminal.
